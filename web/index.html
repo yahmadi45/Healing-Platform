@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1220">
+  <title>SentinelOps | Operations</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-mark">S</span><span>Sentinel<span class="muted">Ops</span><small>DEVNET LAB</small></span></div>
+    <div class="nav-label">WORKSPACE</div>
+    <a class="nav-item active" href="#overview"><span>◫</span> Overview</a>
+    <a class="nav-item" href="#services"><span>◇</span> Services</a>
+    <a class="nav-item" href="#incidents"><span>◎</span> Incidents <span id="nav-incidents" class="nav-count">0</span></a>
+    <div class="sidebar-bottom"><span class="pulse-dot"></span> Demo environment <span class="version">MVP</span></div>
+  </aside>
+  <main class="main" id="overview">
+    <header class="topbar"><div><span class="crumb">Workspace /</span> Operations</div><div class="top-right"><span class="live"><i></i> LIVE</span><button class="icon-button" id="refresh" title="Refresh">↻</button><div class="avatar">SO</div></div></header>
+    <section class="page-heading"><div><div class="eyebrow">INFRASTRUCTURE CONTROL PLANE</div><h1>Operations overview</h1><p>Monitor demo services, review incidents, and test policy-controlled recovery.</p></div><div class="heading-actions"><button class="button secondary" id="refresh-main">Refresh data</button></div></section>
+    <div id="notice" class="notice" hidden></div>
+    <section class="stats-grid" aria-label="System summary">
+      <article class="stat-card"><div class="stat-label">Services monitored <span class="stat-icon blue">◇</span></div><div class="stat-value" id="stat-services">—</div><div class="stat-foot">Registered demo services</div></article>
+      <article class="stat-card"><div class="stat-label">Healthy services <span class="stat-icon green">✓</span></div><div class="stat-value" id="stat-healthy">—</div><div class="stat-foot"><span class="green-text">● Operational</span> status</div></article>
+      <article class="stat-card"><div class="stat-label">Open incidents <span class="stat-icon amber">!</span></div><div class="stat-value" id="stat-incidents">—</div><div class="stat-foot">Requires review or recovery</div></article>
+      <article class="stat-card"><div class="stat-label">Recoveries today <span class="stat-icon violet">↻</span></div><div class="stat-value" id="stat-recoveries">—</div><div class="stat-foot">Actions logged in this session</div></article>
+    </section>
+    <section class="panel" id="services"><div class="panel-heading"><div><h2>Services</h2><p>Demo states only; no host containers are controlled.</p></div><span class="subtle" id="updated-at">Loading…</span></div><div class="table-wrap"><table><thead><tr><th>SERVICE</th><th>ENVIRONMENT</th><th>STATUS</th><th>LAST CHECK</th><th>ACTIONS</th></tr></thead><tbody id="services-body"><tr><td colspan="5" class="empty">Loading services…</td></tr></tbody></table></div></section>
+    <section class="panel incidents-panel" id="incidents"><div class="panel-heading"><div><h2>Incident timeline</h2><p>Recent alerts and policy decisions</p></div><span class="subtle">Latest first</span></div><div id="incidents-list" class="timeline"><div class="empty">Loading incidents…</div></div></section>
+    <footer>SentinelOps MVP <span>•</span> Simulated recovery only <span>•</span> <a href="/metrics" target="_blank">Metrics endpoint</a></footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

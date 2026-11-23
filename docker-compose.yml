@@ -1,0 +1,31 @@
+services:
+  sentinelops:
+    build: .
+    image: sentinelops:local
+    ports:
+      - "${SENTINELOPS_PORT:-8080}:8080"
+    environment:
+      LISTEN_ADDR: ":8080"
+      ALLOW_DEMO_ACTIONS: "${ALLOW_DEMO_ACTIONS:-true}"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/sentinelops", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+
+  prometheus:
+    image: prom/prometheus:latest
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --storage.tsdb.retention.time=7d
+    depends_on:
+      sentinelops:
+        condition: service_healthy
+    restart: unless-stopped
