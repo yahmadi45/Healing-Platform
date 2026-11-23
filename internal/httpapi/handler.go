@@ -59,11 +59,14 @@ func New(repo store.Repository, allow bool, logger *slog.Logger) http.Handler {
 			return
 		}
 		if file, err := web.Open(requestPath); err == nil {
+			info, statErr := file.Stat()
 			file.Close()
-			static.ServeHTTP(w, r)
-			return
+			if statErr == nil && !info.IsDir() {
+				static.ServeHTTP(w, r)
+				return
+			}
 		}
-		if path.Ext(requestPath) != "" {
+		if requestPath == "assets" || strings.HasPrefix(requestPath, "assets/") || path.Ext(requestPath) != "" {
 			http.NotFound(w, r)
 			return
 		}

@@ -58,7 +58,7 @@ func TestDashboardFallbackPreservesAPIAndAsset404s(t *testing.T) {
 	s := httptest.NewServer(h)
 	defer s.Close()
 
-	for _, path := range []string{"/dashboard", "/api/unknown", "/api/v1/unknown", "/healthz/unknown", "/readyz/unknown", "/metrics/unknown", "/assets/missing.js"} {
+	for _, path := range []string{"/dashboard", "/api/unknown", "/api/v1/unknown", "/healthz/unknown", "/readyz/unknown", "/metrics/unknown", "/assets/missing.js", "/assets/missing"} {
 		res, err := http.Get(s.URL + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
