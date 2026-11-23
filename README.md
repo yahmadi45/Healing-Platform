@@ -21,7 +21,7 @@ Prometheus :9090 ── scrapes sentinelops:8080/metrics every 15 seconds
 
 - Go API: `main.go`, with internal modules under `internal/`.
 - Persistence: PostgreSQL is used when configured; startup applies embedded migrations. Without database configuration, the server deliberately falls back to the in-memory demo adapter.
-- Frontend: the current UI is static HTML/CSS/JavaScript embedded in the API. It is not yet the planned React/TypeScript/Vite frontend.
+- Frontend: a React/TypeScript/Vite dashboard in `apps/web/` is built into the API's embedded web directory by the production Docker build.
 - Health: `/healthz` checks the process; `/readyz` checks the selected repository/database.
 - Graceful shutdown: SIGINT/SIGTERM stops HTTP serving with a timeout.
 - SQL schema: `internal/postgres/migrations/0001_foundation.sql` creates services, incidents, operation events, constraints, and indexes.
@@ -32,16 +32,34 @@ Prometheus :9090 ── scrapes sentinelops:8080/metrics every 15 seconds
 .github/workflows/ci.yml       Go tests, vet, Compose validation, image build
 internal/config/               Environment parsing and validation
 internal/domain/               Domain/API types
-internal/httpapi/              HTTP handlers, metrics, static UI
+internal/httpapi/              HTTP handlers, metrics, embedded UI assets
 internal/postgres/              PostgreSQL repository and SQL migrations
 internal/store/                 Repository contract and in-memory adapter
-web/                             Current static demo UI
+apps/web/                       React/TypeScript/Vite dashboard and tests
 Dockerfile                       Multi-stage Go build; non-root runtime
 docker-compose.yml               SentinelOps, PostgreSQL, Prometheus
 prometheus.yml                   Prometheus scrape target
 ```
 
 ## Run locally
+
+To run the Vite dashboard against a local Go API, install the frontend dependencies and start Vite:
+
+```sh
+cd apps/web
+npm ci
+npm run dev
+```
+
+In another terminal, start the Go API from the repository root:
+
+```sh
+go run .
+```
+
+Vite serves the dashboard at <http://localhost:5173> and proxies `/api`, `/healthz`, `/readyz`, and `/metrics` to `http://localhost:8080`. Set `SENTINELOPS_API_TARGET` to use a different API address.
+
+The production dashboard and backend run together with Docker Compose:
 
 From the repository root:
 
@@ -95,6 +113,8 @@ The API accepts either `DATABASE_URL`, or `POSTGRES_HOST`, `POSTGRES_PORT`, `POS
 | GET | `/readyz` | Repository/database readiness |
 | GET | `/metrics` | Prometheus exposition format |
 
+The API also supports the corresponding unversioned `/api/...` routes used by the dashboard and Vite development proxy.
+
 Example:
 
 ```sh
@@ -117,17 +137,26 @@ Prometheus scrapes every 15 seconds. Use `/targets` to confirm `sentinelops` is 
 
 ## Tests and CI
 
-Run Go checks when Go is installed:
+Run frontend checks from `apps/web/`:
 
 ```sh
-gofmt -w $(find . -name '*.go')
+npm ci
+npm run lint
+npm test
+npm run build
+npm audit --omit=dev
+```
+
+Run Go checks and validate/build the production image from the repository root:
+
+```sh
 go test -race -cover ./...
 go vet ./...
 docker compose config --quiet
 docker build -t sentinelops:local .
 ```
 
-GitHub Actions runs formatting, race-enabled Go tests, `go vet`, Compose validation, and a Docker image build for pushes and pull requests targeting `main`.
+GitHub Actions runs frontend lint, tests and build, Go formatting and race-enabled tests, `go vet`, Compose validation, and a Docker image build for pushes and pull requests targeting `main`. The runtime image contains the Go service and embedded frontend only; Node/npm are not installed in it.
 
 ## M1 boundaries and design decisions
 
@@ -140,13 +169,12 @@ GitHub Actions runs formatting, race-enabled Go tests, `go vet`, Compose validat
 
 ## Next milestones
 
-1. Add CI-backed React/TypeScript/Vite UI that consumes `/api/v1` and retains the current demo dashboard behavior.
-2. Add OIDC login through Keycloak and server-side role authorization before privileged endpoints.
-3. Add request validation, pagination, correlation IDs, and durable audit records.
-4. Define deployment state machine and security-gate workflow; initially execute only in an isolated lab.
-5. Add alert ingestion/correlation and integrate Prometheus/Grafana/Loki/OpenTelemetry.
-6. Add backup/restore with documented RPO/RTO and a repeatable isolated restore test.
-7. Add a Go agent and NATS JetStream only after enrollment, identity, command contracts, and idempotency are defined.
+1. Add OIDC login through Keycloak and server-side role authorization before privileged endpoints.
+2. Add request validation, pagination, correlation IDs, and durable audit records.
+3. Define deployment state machine and security-gate workflow; initially execute only in an isolated lab.
+4. Add alert ingestion/correlation and integrate Prometheus/Grafana/Loki/OpenTelemetry.
+5. Add backup/restore with documented RPO/RTO and a repeatable isolated restore test.
+6. Add a Go agent and NATS JetStream only after enrollment, identity, command contracts, and idempotency are defined.
 
 ## Two-PC workflow
 

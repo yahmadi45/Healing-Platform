@@ -3,3 +3,5 @@
 *.log
 coverage.out
 README.md
+**/node_modules
+apps/web/dist
