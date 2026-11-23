@@ -1,353 +1,153 @@
-# SentinelOps — PFE MVP
+# SentinelOps — Engineering MVP
 
-**Projet 10 — DevOps, SSO et supervision**
+SentinelOps is a learning platform for **Projet 10 — DevOps, SSO et supervision**. The current milestone is a modular Go control-plane API, PostgreSQL persistence, Docker Compose, Prometheus metrics, and a small demo console.
 
-SentinelOps est un MVP pédagogique d'une plateforme interne d'opérations pour services conteneurisés. Cette première version fournit une console web, une API Go, des services de démonstration, une simulation d'incident/récupération, des métriques Prometheus et une configuration Docker Compose.
+> **Scope and safety:** failure and recovery actions update SentinelOps demo records only. The platform does not connect to the Docker socket, execute host commands, deploy application releases, or perform real recovery. OIDC/Keycloak, RBAC, NATS, a host agent, security scanning, and backup/restore are future milestones, not implemented features.
 
-> **Limite importante :** le MVP ne se connecte pas au daemon Docker et ne redémarre aucun conteneur. Les boutons « Simulate failure » et « Recover » modifient uniquement l'état en mémoire de l'application. Ils servent à démontrer un flux de détection/récupération sans risque. Il n'y a pas encore de Keycloak/SSO, base persistante, agent Linux, moteur IA, NATS, déploiement réel, sauvegarde ni rollback.
-
-## Sommaire
-
-- [Objectifs](#objectifs)
-- [Architecture livrée](#architecture-livrée)
-- [Structure du dépôt](#structure-du-dépôt)
-- [Prérequis](#prérequis)
-- [Lancer avec Docker Compose](#lancer-avec-docker-compose)
-- [Utiliser la console](#utiliser-la-console)
-- [API HTTP](#api-http)
-- [Métriques](#métriques)
-- [Tests et développement local](#tests-et-développement-local)
-- [Configuration](#configuration)
-- [Sécurité et limites](#sécurité-et-limites)
-- [Architecture cible du PFE](#architecture-cible-du-pfe)
-- [Plan de réalisation](#plan-de-réalisation)
-- [Répartition entre deux PC](#répartition-entre-deux-pc)
-- [Dépannage](#dépannage)
-
-## Objectifs
-
-Ce dépôt donne une base exécutable pour commencer à explorer les axes du sujet :
-
-1. Conteneuriser une application et ses services.
-2. exposer un tableau de bord d'état et un historique d'incidents.
-3. mesurer les états avec Prometheus.
-4. expliquer un flux fermé d'incident : détection → politique → action contrôlée → vérification.
-5. construire ensuite les fonctions DevSecOps, SSO, supervision et reprise après sinistre comme livrables séparés.
-
-Ne présentez pas les extensions prévues comme des fonctions déjà implémentées.
-
-## Architecture livrée
+## Current architecture
 
 ```text
-Navigateur
-   │ HTTP :8080
-   ▼
-SentinelOps (Go, API + fichiers statiques embarqués)
-   ├── /api/services       États de démo en mémoire
-   ├── /api/incidents      Incidents de démo en mémoire
-   ├── /api/events         Journal d'événements de démo
-   ├── /metrics            Exposition Prometheus
-   └── /healthz, /readyz   Vérifications de santé
-          ▲
-          │ scrape toutes les 15 secondes
-          └──────── Prometheus :9090
+Browser ── HTTP :8080 ──> Go API (modular monolith)
+                              ├── config: validated environment settings
+                              ├── domain: API/domain data types
+                              ├── httpapi: routes, JSON, metrics, health
+                              ├── store: repository interface + in-memory adapter
+                              └── postgres: pgx adapter + embedded SQL migrations
+                                      │
+                                      └── PostgreSQL 17 (Compose named volume)
+
+Prometheus :9090 ── scrapes sentinelops:8080/metrics every 15 seconds
 ```
 
-- **Backend :** Go standard library, HTTP, stockage volatile protégé par mutex.
-- **UI :** HTML, CSS et JavaScript natifs, servis par le même binaire Go. Aucune compilation frontend ni installation npm nécessaire.
-- **Image :** compilation multi-stage; l'image d'exécution utilise Alpine et un utilisateur non-root.
-- **Prometheus :** configuration locale `prometheus.yml`, rétention de démonstration de 7 jours. Aucun volume durable n'est configuré pour Prometheus dans ce MVP.
-- **Healthcheck :** l'image vérifie `/healthz`.
-- **Actions :** les scénarios sont simulés, ne contrôlent pas les conteneurs.
+- Go API: `main.go`, with internal modules under `internal/`.
+- Persistence: PostgreSQL is used when configured; startup applies embedded migrations. Without database configuration, the server deliberately falls back to the in-memory demo adapter.
+- Frontend: the current UI is static HTML/CSS/JavaScript embedded in the API. It is not yet the planned React/TypeScript/Vite frontend.
+- Health: `/healthz` checks the process; `/readyz` checks the selected repository/database.
+- Graceful shutdown: SIGINT/SIGTERM stops HTTP serving with a timeout.
+- SQL schema: `internal/postgres/migrations/0001_foundation.sql` creates services, incidents, operation events, constraints, and indexes.
 
-## Structure du dépôt
+## Repository layout
 
 ```text
-.
-├── .dockerignore
-├── Dockerfile
-├── README.md
-├── docker-compose.yml
-├── go.mod
-├── main.go
-├── main_test.go
-├── prometheus.yml
-└── web/
-    ├── app.js
-    ├── index.html
-    └── style.css
+.github/workflows/ci.yml       Go tests, vet, Compose validation, image build
+internal/config/               Environment parsing and validation
+internal/domain/               Domain/API types
+internal/httpapi/              HTTP handlers, metrics, static UI
+internal/postgres/              PostgreSQL repository and SQL migrations
+internal/store/                 Repository contract and in-memory adapter
+web/                             Current static demo UI
+Dockerfile                       Multi-stage Go build; non-root runtime
+docker-compose.yml               SentinelOps, PostgreSQL, Prometheus
+prometheus.yml                   Prometheus scrape target
 ```
 
-## Prérequis
+## Run locally
 
-- Docker Engine avec le plugin Compose, ou Docker Desktop.
-- Git si vous clonez le dépôt.
-- Ports locaux libres : `8080` pour SentinelOps et `9090` pour Prometheus.
-
-Aucun compte externe, clé API, modèle IA ou service cloud n'est requis pour lancer le MVP.
-
-## Lancer avec Docker Compose
-
-Depuis le répertoire du projet :
+From the repository root:
 
 ```sh
 docker compose up --build --pull always
 ```
 
-`--pull always` vérifie les images de service configurées avant le démarrage; `--build` reconstruit l'image SentinelOps. Ouvrez ensuite :
-
-- Console : <http://localhost:8080>
-- Prometheus : <http://localhost:9090>
-- Santé API : <http://localhost:8080/healthz>
-- Métriques : <http://localhost:8080/metrics>
-
-Arrêter sans supprimer les données de Docker :
-
-```sh
-docker compose down
-```
-
-Reconstruire uniquement l'application après une modification :
-
-```sh
-docker compose up --build --pull always -d sentinelops
-```
-
-Les données des incidents sont conservées uniquement tant que le processus Go reste en cours. Elles disparaissent lors d'un redémarrage du conteneur.
-
-## Utiliser la console
-
-1. La page affiche les services `api`, `web` et `postgres` dans l'état initial `healthy`.
-2. Cliquer sur **Simulate failure** marque le service comme `unhealthy` dans l'état en mémoire et crée un incident de démonstration.
-3. Cliquer sur **Recover** marque le service comme `healthy`, résout les incidents ouverts correspondants et incrémente son compteur de récupérations.
-4. Le tableau de bord actualise les données toutes les 15 secondes. Le bouton **Refresh data** permet un rafraîchissement immédiat.
-5. Un service est limité à trois récupérations simulées. C'est une limite de démonstration, pas un circuit breaker distribué.
-
-Les intitulés indiquent explicitement que les changements sont simulés; aucun processus externe n'est arrêté.
-
-## API HTTP
-
-Toutes les réponses API sont au format JSON sauf `/metrics`.
-
-| Méthode | Route | Fonction |
-|---|---|---|
-| `GET` | `/api/services` | Liste des services simulés |
-| `GET` | `/api/incidents` | Historique d'incidents simulés |
-| `GET` | `/api/events` | Événements de simulation |
-| `GET` | `/api/stats` | Résumé des compteurs |
-| `POST` | `/api/services/{name}/fail` | Simule une panne et crée un incident |
-| `POST` | `/api/services/{name}/recover` | Simule le rétablissement et résout l'incident |
-| `GET` | `/healthz` | Santé du processus |
-| `GET` | `/readyz` | Disponibilité de démonstration |
-| `GET` | `/metrics` | Métriques au format Prometheus |
-
-Exemple de parcours :
-
-```sh
-curl http://localhost:8080/api/services
-curl -X POST http://localhost:8080/api/services/api/fail
-curl http://localhost:8080/api/incidents
-curl -X POST http://localhost:8080/api/services/api/recover
-curl http://localhost:8080/api/stats
-```
-
-Une requête de récupération vers un service sain renvoie `409 Conflict`; un nom inconnu renvoie `404`; une action désactivée par configuration renvoie `403`.
-
-## Métriques
-
-Les métriques actuellement exposées sont :
-
-- `sentinelops_services_total` — nombre de services de démonstration.
-- `sentinelops_services_unhealthy` — services de démonstration non sains.
-- `sentinelops_incidents_open` — incidents ouverts.
-- `sentinelops_recoveries_total` — récupérations simulées réussies.
-
-Prometheus scrape SentinelOps toutes les 15 secondes. Vérifiez les cibles sur <http://localhost:9090/targets>. La métrique représente l'état du simulateur, pas la santé réelle du daemon Docker, d'un hôte Linux ou d'une base de données.
-
-## Tests et développement local
-
-Lancer les tests unitaires :
-
-```sh
-go test ./...
-```
-
-Vérifier le format Go :
-
-```sh
-gofmt -w main.go main_test.go
-go vet ./...
-```
-
-Lancer directement le serveur :
-
-```sh
-go run .
-```
-
-Puis visiter <http://localhost:8080>. Les fichiers web sont intégrés au binaire avec `go:embed`.
-
-## Configuration
-
-Les variables lues par le service :
-
-| Variable | Défaut | Description |
-|---|---|---|
-| `LISTEN_ADDR` | `:8080` | Adresse/port d'écoute interne du serveur |
-| `ALLOW_DEMO_ACTIONS` | `true` | Autorise les changements d'état simulés |
-| `SENTINELOPS_PORT` | `8080` | Port hôte publié par Compose |
-| `PROMETHEUS_PORT` | `9090` | Port hôte publié par Compose |
-
-Pour désactiver les boutons d'action :
-
-```powershell
-$env:ALLOW_DEMO_ACTIONS="false"; docker compose up --build --pull always
-```
-
-Ou en bash :
-
-```sh
-ALLOW_DEMO_ACTIONS=false docker compose up --build --pull always
-```
-
-Compose utilise également un `.env` local pour substituer les ports. Ne mettez jamais secrets, mots de passe ou jetons dans une image, dans Git ou dans ce fichier de configuration public. Le MVP ne nécessite pas de secrets.
-
-## Sécurité et limites
-
-Cette application est une base pédagogique, **pas un plan de contrôle prêt pour la production**.
-
-- Il n'y a pas d'authentification, SSO, RBAC, CSRF protection ou séparation des rôles. Ne l'exposez pas à Internet ni à un réseau non fiable.
-- Les actions sont actuellement simulées et non authentifiées. Gardez le service sur votre machine ou dans un laboratoire isolé.
-- Pour un accès depuis le PC léger, préférez un tunnel SSH local plutôt que publier le port sur un réseau public. Exemple depuis le PC client : `ssh -L 8080:127.0.0.1:8080 utilisateur@IP_DU_PC_HOTE`, puis visitez `http://localhost:8080`. Adaptez le nom d'utilisateur et l'adresse IP.
-- Avant toute connexion future au daemon Docker, créer une interface minimale de commandes autorisées, authentifier chaque demande, appliquer least privilege, auditer et limiter les actions. Ne jamais accepter une commande shell arbitraire envoyée par HTTP.
-- Les états et incidents sont volatils; ils ne peuvent servir comme audit durable.
-- Prometheus n'a pas de volume nommé dans cet exemple; ses données sont éphémères selon le cycle de vie du conteneur.
-- Les polices distantes sont décoratives; l'interface fonctionne sans elles, mais le chargement distant peut ne pas fonctionner hors ligne.
-
-## Architecture cible du PFE
-
-Élargir progressivement, sans commencer par neuf microservices. Chaque étape doit être testable et correspondre à un besoin mesurable.
-
-### Étape 1 — socle fiable
-
-- Définir les modèles de services, déploiements et incidents.
-- Remplacer le stockage mémoire par PostgreSQL et migrations versionnées.
-- Ajouter tests d'intégration, gestion de configuration et journaux structurés.
-- Définir les contrats d'API et l'idempotency key des actions.
-
-### Étape 2 — identité et audit
-
-- Intégrer Keycloak via OpenID Connect.
-- Valider l'émetteur, l'audience, la signature et l'expiration des jetons.
-- Mettre en place des rôles Viewer, Operator et Admin avec autorisation serveur.
-- Journaliser acteur, décision, cible, résultat, horodatage et correlation ID.
-- Ajouter tests qui prouvent qu'un Viewer ne peut pas déclencher une action.
-
-### Étape 3 — déploiements contrôlés
-
-- Construire des images dans CI et leur attribuer un tag immuable (idéalement digest).
-- Enregistrer l'historique de versions et lancer un déploiement vers un environnement de test.
-- Vérifier health checks; n'autoriser le rollback que selon une politique explicite.
-- Ajouter approbation humaine avant actions à risque.
-- Utiliser des cibles de démonstration dédiées, jamais les services personnels ou production.
-
-### Étape 4 — observabilité et incidents
-
-- Ajouter Prometheus, Alertmanager, Grafana, Loki et OpenTelemetry selon les besoins.
-- Transmettre un correlation ID entre API, déploiement et événements.
-- Dédupliquer les alertes avec une clé stable et un intervalle de regroupement.
-- Construire une timeline qui relie déploiements, alertes, logs et décisions.
-- Distinguer clairement alertes observées, causes suspectées et causes confirmées.
-
-### Étape 5 — récupération sûre
-
-- Modéliser les actions autorisées avec schémas fermés; aucune commande shell libre.
-- Ajouter idempotence, limite de répétition, cooldown, timeout et verrou par service.
-- Faire d'abord le mode dry-run puis exiger approbation humaine.
-- Vérifier la santé après action et enregistrer succès/échec.
-- Limiter les permissions système à une petite allowlist de services isolés.
-
-### Étape 6 — sécurité de livraison
-
-- Pipeline CI : format, tests, lint, build, scans dépendances et image, secrets, SBOM.
-- Définir des seuils de blocage justifiés; documenter les exceptions et leur expiration.
-- Tester les configurations Docker, utilisateur non-root, ports, capabilities et secrets.
-- Conserver les artefacts et résultats de scan liés à une révision de code.
-
-### Étape 7 — sauvegarde et reprise
-
-- Définir RPO/RTO avec l'encadrant et le scénario d'essai.
-- Sauvegarder PostgreSQL selon une politique de rétention documentée.
-- Protéger les clés de chiffrement séparément des sauvegardes.
-- Tester régulièrement restauration dans un environnement isolé.
-- Mesurer les résultats de restauration; une archive non restaurée n'est pas une preuve de reprise.
-
-### Étape 8 — système multi-hôte (extension)
-
-- Concevoir un agent Go à protocole authentifié, identité par hôte et permissions minimales.
-- Gérer heartbeats, pertes réseau, reprise de connexion et commandes idempotentes.
-- Ajouter NATS seulement si le besoin d'événements asynchrones justifie son coût opérationnel.
-- Simuler partition réseau, arrêt du control plane, panne base, saturation disque et rollback.
-- Mesurer latence de détection, taux de faux positifs, durée de récupération et RPO/RTO.
-
-### Composants: livré vs extension
-
-| Composant | État |
-|---|---|
-| Go API + interface web | Livré |
-| Dockerfile multi-stage + Compose | Livré |
-| Prometheus scrape + endpoint métriques | Livré |
-| Incidents/récupération de démonstration | Livré, mémoire seulement |
-| PostgreSQL durable | À développer |
-| Keycloak SSO / OIDC / RBAC | À développer |
-| Grafana / Loki / traces | À intégrer/configurer |
-| CI/CD et scanners DevSecOps | À configurer |
-| Docker host agent / multi-host | Extension, non implémentée |
-| NATS / event streaming | Extension, non implémentée |
-| Backup/restore testés | À développer |
-| IA / root-cause analysis automatique | Non incluse; ne pas promettre sans évaluation et mesures |
-
-## Répartition entre deux PC
-
-Si le premier PC possède beaucoup de stockage et le second environ 225 GB :
-
-- **PC hôte (stockage élevé) :** dépôt de travail, Docker Engine, images, volumes, PostgreSQL de labo, Prometheus et build cache.
-- **PC client (225 GB) :** éditeur (VS Code), Git, navigateur et connexion SSH. Faire du Remote SSH vers le PC hôte permet de garder outils et `node_modules` éventuels du côté hôte; ce dépôt n'a actuellement aucun `node_modules`.
-- **Git :** chaque personne ou agent travaille sur une branche ou un worktree séparé; ouvrir une Pull Request et faire tourner les tests avant merge.
-- **Agents IA :** découper en tâches indépendantes (ex. tests API, UI, configuration observabilité). Revoir les changements et ne pas laisser plusieurs agents modifier simultanément le même répertoire de travail.
-- **Données :** sauvegarder séparément les volumes avant une opération de nettoyage; les images Docker sont retéléchargeables mais leurs volumes peuvent contenir des données irremplaçables.
-
-Pour le tunnel SSH, le PC hôte doit avoir un serveur SSH accessible depuis le PC client. N'ouvrez pas le port Docker daemon 2375 sur le LAN; l'API Docker donne des pouvoirs élevés sur la machine.
-
-## Dépannage
-
-### Port déjà occupé
-
-```powershell
-$env:SENTINELOPS_PORT="8081"; docker compose up --build --pull always
-```
-
-Interface : `http://localhost:8081`.
-
-### Voir logs et état des services
+Open:
+
+- Dashboard: <http://localhost:8080>
+- Health: <http://localhost:8080/healthz>
+- Readiness: <http://localhost:8080/readyz>
+- Prometheus metrics: <http://localhost:8080/metrics>
+- Prometheus UI: <http://localhost:9090>
+- Prometheus targets: <http://localhost:9090/targets>
+
+Check services and logs:
 
 ```sh
 docker compose ps
-docker compose logs -f sentinelops
-docker compose logs -f prometheus
+docker compose logs -f sentinelops postgres prometheus
 ```
 
-### Reconstruire sans cache
-
-```sh
-docker compose build --no-cache sentinelops
-docker compose up --pull always
-```
-
-### Arrêt complet
+Stop containers but keep PostgreSQL data:
 
 ```sh
 docker compose down
 ```
 
-La commande ci-dessus ne supprime pas les autres volumes Docker de la machine.
+`docker compose down -v` deletes the PostgreSQL named volume and its data; use it only when you intentionally want a full local reset.
+
+## Configuration and secrets
+
+Copy `.env.example` to `.env` and set a unique local PostgreSQL password. Compose also supports `SENTINELOPS_PORT`, `PROMETHEUS_PORT`, `ALLOW_DEMO_ACTIONS`, `POSTGRES_DB`, `POSTGRES_USER`, and `POSTGRES_PASSWORD`.
+
+The example credentials are for isolated local development only. Do not commit a real `.env`, put secrets in the Docker image, or reuse these credentials outside a disposable local environment. A production deployment needs an external secret-management mechanism, TLS, authentication, authorization, and network restrictions.
+
+The API accepts either `DATABASE_URL`, or `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_SSLMODE`. PostgreSQL URI values are escaped by Go's URL builder. `LISTEN_ADDR` defaults to `:8080`.
+
+## API and demo actions
+
+| Method | Endpoint | Purpose |
+|---|---|---|
+| GET | `/api/v1/services` | List demo services |
+| GET | `/api/v1/incidents` | List incidents |
+| GET | `/api/v1/events` | List recent operation events |
+| GET | `/api/v1/stats` | Service and incident summary |
+| POST | `/api/v1/services/{name}/fail` | Simulate service failure |
+| POST | `/api/v1/services/{name}/recover` | Simulate recovery, limited to three per service |
+| GET | `/healthz` | Process health |
+| GET | `/readyz` | Repository/database readiness |
+| GET | `/metrics` | Prometheus exposition format |
+
+Example:
+
+```sh
+curl http://localhost:8080/api/v1/services
+curl -X POST http://localhost:8080/api/v1/services/api/fail
+curl http://localhost:8080/api/v1/incidents
+curl -X POST http://localhost:8080/api/v1/services/api/recover
+```
+
+These are simulator state transitions. No Docker containers or Linux host services are stopped or restarted. The API currently has no login or RBAC, so keep it on a trusted local machine/lab and do not expose it publicly.
+
+## Prometheus metrics
+
+- `sentinelops_services_total`
+- `sentinelops_services_unhealthy`
+- `sentinelops_incidents_open`
+- `sentinelops_recoveries_total`
+
+Prometheus scrapes every 15 seconds. Use `/targets` to confirm `sentinelops` is `UP`; query a metric by name in the expression browser. These metrics reflect application records, not host/container telemetry.
+
+## Tests and CI
+
+Run Go checks when Go is installed:
+
+```sh
+gofmt -w $(find . -name '*.go')
+go test -race -cover ./...
+go vet ./...
+docker compose config --quiet
+docker build -t sentinelops:local .
+```
+
+GitHub Actions runs formatting, race-enabled Go tests, `go vet`, Compose validation, and a Docker image build for pushes and pull requests targeting `main`.
+
+## M1 boundaries and design decisions
+
+- Modular monolith rather than microservices; repository interfaces isolate storage from HTTP handlers.
+- PostgreSQL migrations are embedded, versioned, sorted, and each migration runs inside a transaction.
+- Database mutations lock the service row and persist the service state, incident, and event in one transaction.
+- The current schema is intentionally limited to demo services/incidents/events; it is not the full proposed PFE ERD.
+- No NATS/outbox yet: add them when durable asynchronous work is implemented, not as unused infrastructure.
+- No arbitrary shell or Docker API access. Any future agent execution must use a strict allowlist, authenticated identity, least privilege, bounded timeouts, idempotency, and audit.
+
+## Next milestones
+
+1. Add CI-backed React/TypeScript/Vite UI that consumes `/api/v1` and retains the current demo dashboard behavior.
+2. Add OIDC login through Keycloak and server-side role authorization before privileged endpoints.
+3. Add request validation, pagination, correlation IDs, and durable audit records.
+4. Define deployment state machine and security-gate workflow; initially execute only in an isolated lab.
+5. Add alert ingestion/correlation and integrate Prometheus/Grafana/Loki/OpenTelemetry.
+6. Add backup/restore with documented RPO/RTO and a repeatable isolated restore test.
+7. Add a Go agent and NATS JetStream only after enrollment, identity, command contracts, and idempotency are defined.
+
+## Two-PC workflow
+
+Keep the repository, Docker images, database volume, and Compose services on the storage-rich PC. Use the smaller PC as a VS Code/SSH client. Work on feature branches or isolated Git worktrees, keep Copilot's UI work on its own branch, and merge only after CI passes. Do not share one mutable worktree between multiple agents.

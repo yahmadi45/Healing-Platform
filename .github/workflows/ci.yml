@@ -28,6 +28,8 @@ jobs:
         run: go test -race -cover ./...
       - name: Run vet
         run: go vet ./...
+      - name: Validate Compose configuration
+        run: docker compose config --quiet
 
   docker-build:
     name: Build container image

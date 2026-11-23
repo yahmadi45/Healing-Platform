@@ -6,4 +6,4 @@ scrape_configs:
   - job_name: sentinelops
     metrics_path: /metrics
     static_configs:
-      - targets: [sentinelops:8080]
+      - targets: ["sentinelops:8080"]
