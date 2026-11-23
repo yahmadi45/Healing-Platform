@@ -9,6 +9,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"path"
+	"strings"
 	"time"
 
 	"sentinelops/internal/store"
@@ -44,7 +46,32 @@ func New(repo store.Repository, allow bool, logger *slog.Logger) http.Handler {
 	mux.HandleFunc("GET /api/v1/stats", h.stats)
 	mux.HandleFunc("POST /api/v1/services/{name}/{action}", h.action)
 	mux.HandleFunc("GET /metrics", h.metrics)
-	mux.Handle("GET /", static)
+	mux.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+		if requestPath == "" {
+			requestPath = "index.html"
+		}
+		if requestPath == "api" || strings.HasPrefix(requestPath, "api/") ||
+			requestPath == "healthz" || strings.HasPrefix(requestPath, "healthz/") ||
+			requestPath == "readyz" || strings.HasPrefix(requestPath, "readyz/") ||
+			requestPath == "metrics" || strings.HasPrefix(requestPath, "metrics/") {
+			http.NotFound(w, r)
+			return
+		}
+		if file, err := web.Open(requestPath); err == nil {
+			info, statErr := file.Stat()
+			file.Close()
+			if statErr == nil && !info.IsDir() {
+				static.ServeHTTP(w, r)
+				return
+			}
+		}
+		if requestPath == "assets" || strings.HasPrefix(requestPath, "assets/") || path.Ext(requestPath) != "" {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeFileFS(w, r, web, "index.html")
+	}))
 	return securityHeaders(requestLog(logger, mux))
 }
 func (h *Handler) health(w http.ResponseWriter, _ *http.Request) {

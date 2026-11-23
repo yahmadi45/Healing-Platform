@@ -52,3 +52,24 @@ func TestRoutesAndFailureRecovery(t *testing.T) {
 		t.Fatalf("metrics missing series: %s", body)
 	}
 }
+
+func TestDashboardFallbackPreservesAPIAndAsset404s(t *testing.T) {
+	h := New(store.NewMemory(), true, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	s := httptest.NewServer(h)
+	defer s.Close()
+
+	for _, path := range []string{"/dashboard", "/api/unknown", "/api/v1/unknown", "/healthz/unknown", "/readyz/unknown", "/metrics/unknown", "/assets/missing.js", "/assets/missing"} {
+		res, err := http.Get(s.URL + path)
+		if err != nil {
+			t.Fatalf("GET %s: %v", path, err)
+		}
+		want := http.StatusNotFound
+		if path == "/dashboard" {
+			want = http.StatusOK
+		}
+		if res.StatusCode != want {
+			t.Errorf("GET %s: status=%d, want %d", path, res.StatusCode, want)
+		}
+		res.Body.Close()
+	}
+}

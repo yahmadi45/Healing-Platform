@@ -1,3 +1,6 @@
 .env
 *.log
 coverage.out
+apps/web/node_modules/
+apps/web/dist/
+apps/web/tsconfig.tsbuildinfo
