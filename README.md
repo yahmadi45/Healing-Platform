@@ -1,6 +1,6 @@
 # SentinelOps
 
-**PFE topic:** Projet 10 — DevOps, SSO et supervision
+
 
 **Current scope:** engineering MVP with a Go modular-monolith API, PostgreSQL persistence, React/TypeScript/Vite operations console, Docker Compose, and Prometheus metrics.
 
